@@ -17,17 +17,22 @@ just run compileme.py ig
 #define SIZE 50
 #define FPS 60
 
-#define basecritchance 30
-#define basehealth 20
-
 struct Weapon {
-  char name[50];
-  char description[100];
   int type;
-  int cost;
+  char name[50];
   float damage;
+  int cooldown;
+  int cost;
   float hitchance;
   float critchance;
+};
+
+struct Armor {
+  int type;
+  char name[50];
+  float damage;
+  float armorpoints;
+  int cost;
 };
 
 struct Cats {
@@ -44,26 +49,54 @@ struct Player {
   int health;
   int damage;
   int critchance;
-  struct Weapon weapons[3];
+  int gold;
+  int weaponsowned[10];
+  int weaponcooldowns[10];
   struct Cats catpanion;
+  struct Armor armorowned;
 };
 
 //just a ton of boilerplate, nothing interesting going on here
 typedef struct Cats cats;
-typedef struct Weapon weapons;
+typedef struct Weapon weapon;
 typedef struct Player player;
+typedef struct Armor armor;
 
-player players[2] = {{"", 20, 0, 30}, {"", 20, 0, 30}};
+player players[2] = {{"", 20, 0, 30, 500, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1}}, {"", 20, 0, 30, 550, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1}}};
 
-cats allcats[6] = {{"Alice", "Calico, cuddly and loves attention. Claws. Hard.", -4, 2, 40}, {"Elise", "Tabby, not the brightest but always a mood booster", 3, -1, 25}, {"Jane", "Tuxedo, bit feisty but will alawys be there", 1, 2, 25}, {"Mary", "Ragdoll, scared of fights but steps up when needed", 2, 1, 20}, {"Lily", "Bombay, unlucky as most black cats are, but hits when needed", 1, 4, 10}, {"Emily", "Maine Coon, majestic, but very self absorbed. Don't talk behind her back", -1, 3, 30}};
+cats allcats[6] = {{"Alice", "Calico, cuddly and loves attention. Claws. Hard.", -4, 3, 40}, {"Elise", "Tabby, not the brightest but always a mood booster", 3, -1, 25}, {"Jane", "Tuxedo, bit feisty but will alawys be there", 1, 2, 25}, {"Mary", "Ragdoll, scared of fights but steps up when needed", 2, 1, 20}, {"Lily", "Bombay, unlucky as most black cats are, but hits when needed", 1, 4, 10}, {"Emily", "Maine Coon, majestic, but very self absorbed. Don't talk behind her back", -1, 2, 30}};
 
-weapons allweapons[2] = {{"one", "first", 1, 50, 20, 20, 20}, {"two", "second", 2, 50, 30, 30, 30}};
+//0 = energy, 1 = kinetic, 2 = melee, 3 = magic
+weapon armory[10] =    {{0, "Tachyon Lance", 30, 20, 1500, 3},
+                        {0, "Plasma Launcher", 4, 2, 700, 6},
+                        {0, "Zip Zap", 1, 1, 500, 6},
+                        {1, "Gauss Canon", 10, 5, 1500, 3},
+                        {1, "Carbine Gun", 3, 1, 1000, 6},
+                        {1, "Hand Gun", 1, 2, 500, 6},
+                        {2, "Dark Saber", 20, 5, 1000, 8},
+                        {2, "Plasma Knife", 3, 2, 500, 8},
+                        {2, "Reaper's Scythe", 15, 5, 800, 9},
+                        {3, "Aetherophasic Engine", 20, 1, 800, 15}
+};
+
+armor allarmor[10] = {{0, "Dark Matter Shield", 4000, 1, 1100},
+                      {0, "Energy Deflector", 2000, 1, 800},
+                      {0, "Basic Shield", 700, 1, 500},
+                      {1, "Gravitational Refractor", 1000, 0.5, 1100},
+                      {1, "Hyper Array", 1000, 0.8, 800},
+                      {1, "Pulsing Array", 500, 0.9, 500},
+                      {2, "Zero-point Armor", 300, 0.3, 1100},
+                      {2, "Power Armor", 300, 0.4, 800},
+                      {2, "Space Armor", 200, 0.6, 500},
+                      {3, "Dimensional Lens", 500, 0.5, 1000},
+};
 
 cats catshop[3];
-weapons weaponshop[5];
+weapon weaponshop[5];
 
 //variables that will actually be juggled by the game
 int menustate = 0;
+int shopstate = 0;
 int bought = 0;
 int currentplayer;
 
@@ -87,7 +120,21 @@ void populatecatshop() {
   }
 }
 
+void nextturn() {
+  for(int i = 0; i < 10; i++) {
+    if(players[currentplayer].weaponcooldowns[i] > 0) {
+      players[currentplayer].weaponcooldowns[i] -= 1;
+    }
+  }
+  currentplayer = (currentplayer + 1) % 2;
+}
+
 //this is mostly rendering stuff
+//unfortunately just a placeholder rn, not much i can do
+void drawtext(SDL_Renderer* rend, char text[], int x, int y, int size, int red, int green, int blue) {
+  printf("%s\n", text);
+}
+
 void drawimage(SDL_Renderer* renderer, int x, int y, const char* fileName) {//fully upfront this code was not written by me
     SDL_Surface* surface = IMG_Load(fileName);
     if (surface == NULL) {
@@ -135,24 +182,67 @@ int menubuttonx = 100;
 int menubuttony = 60;
 
 //my idea with this is to build a lot of small functions that i know work to slowly work up to big girl buttons
-void drawmenubutton(SDL_Renderer* rend, menubutton button) {
-  drawrect(rend, button.x, button.y, menubuttonx, menubuttony, 255, 0, 0);
+void drawmenubutton(SDL_Renderer* rend, menubutton button, int red, int green, int blue) {
+  drawrect(rend, button.x, button.y, menubuttonx, menubuttony, red, green, blue);
 }
 
-int width = WIDTH;
+void drawshopbutton(SDL_Renderer* rend, genericshop button) {
+  if(button.bought == 1) {
+    drawrect(rend, button.x, button.y, menubuttonx, menubuttony, 255, 0, 0);
+  } else {
+    drawrect(rend, button.x, button.y, menubuttonx, menubuttony, 0, 255, 0);
+  }
+}
 
 //button arrays
-menubutton menubuttons[2] = {{0, 300, 0}, {0, 400, 1}};
+menubutton menubuttons[5] = {{0, 360, 2}, {0, 420, 3}, {540, 420, 1}, {100, 360, 4}, {100, 420, 5}};
+menubutton shopstateswitcher[2] = {{0, 120, 0}, {540, 120, 0}};
 genericshop catshopbuttons[3] = {{0, 200}, {270, 200}, {540, 200}};
 
 //menu drawers
 void drawcatshop(SDL_Renderer* rend) {
   for(int i = 0; i < 3; i++) {
-    if(catshopbuttons[i].bought == true) {
-      drawrect(rend, catshopbuttons[i].x, catshopbuttons[i].y, menubuttonx, menubuttony, 255, 0, 0);
-    }
-    else {
-      drawrect(rend, catshopbuttons[i].x, catshopbuttons[i].y, menubuttonx, menubuttony, 0, 255, 0);
+    drawshopbutton(rend, catshopbuttons[i]);
+  }
+}
+
+void drawweapon(SDL_Renderer* rend) {
+  weapon weapontorender = armory[shopstate];
+  //drawtext(rend, weapontorender.name, 200, 50, 50, 255, 255, 255);
+  genericshop menubutton = {270, 350};
+
+  if(players[currentplayer].weaponsowned[shopstate] == 1) {
+    menubutton.bought = 1;
+  }
+
+  drawshopbutton(rend, menubutton);
+}
+
+//duplicate code because armor is ever so slightly the same but also different
+void drawarmor(SDL_Renderer* rend) {
+  armor weapontorender = allarmor[shopstate];
+  drawtext(rend, weapontorender.name, 200, 50, 50, 255, 255, 255);
+  genericshop menubutton = {270, 350};
+
+  drawshopbutton(rend, menubutton);
+}
+
+void drawstats (SDL_Renderer* rend) {
+  char currentplayerdisplay[100];
+  sprintf(currentplayerdisplay, "Player %d's turn\nHealth:%i\nGold:%i\n", currentplayer + 1, players[currentplayer].health, players[currentplayer].gold, 50);
+  drawtext(rend, currentplayerdisplay, 300, 300, 64, 255, 255, 255);
+}
+
+//choosing what weapon to use
+void drawweaponchoices (SDL_Renderer* rend) {
+  int counter = 0;
+  for(int y = 100; y < 200; y += 60) {
+    for(int x = 0; x < 540; x += 100) {
+      genericshop menubutton;
+      menubutton.x = x;
+      menubutton.y = y;
+
+      drawshopbutton(rend, menubutton);
     }
   }
 }
@@ -162,13 +252,24 @@ bool iswithinbutton(int mx, int my, int bx, int by, int bxs, int bys) {
   return(mx >= bx && mx <= bx + bxs && my >= by && my <= by + bys);
 }
 
-//unfortunately just a placeholder rn, not much i can do
-void drawtext(SDL_Renderer* rend, char text[], int x, int y, int size, int red, int green, int blue) {
-  printf("%s\n", text);
+//i have to write logic for the code??? urghhh cant a girl catch a break
+void applycat(cats catchosen) {
+  players[currentplayer].health += catchosen.healthbuff;
+  players[currentplayer].damage += catchosen.damagebuff;
+  players[currentplayer].critchance += catchosen.critchancebuff;
+}
+
+int consc = 0;
+void rest() {
+  players[currentplayer].gold += 150 + (consc * 50);
+  consc += 1;
+  nextturn();
 }
 
 //a lot of the graphics code is stolen from somewhere else. problematic? maybe, but thats coding for you
 int main(int argc, char* argv[]) {
+  //darn classes
+
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
     printf("Error initializing SDL: %s\n", SDL_GetError());
     return 1;
@@ -224,6 +325,7 @@ int main(int argc, char* argv[]) {
               if(iswithinbutton(x_pos, y_pos, catshopbuttons[i].x, catshopbuttons[i].y, menubuttonx, menubuttony) && catshopbuttons[i].bought != true) {
                 catshopbuttons[i].bought = true;
                 players[currentplayer].catpanion = catshop[i];
+                applycat(catshop[i]);
 
                 currentplayer = (currentplayer + 1) % 2;
                 bought += 1;
@@ -236,13 +338,62 @@ int main(int argc, char* argv[]) {
             }
           }
 
-          if(menustate == 1) {
-            for(int i = 0; i < 2; i++) {
+          if(menustate > 0) {
+            for(int i = 0; i < 3; i++) {
               if(iswithinbutton(x_pos, y_pos, menubuttons[i].x, menubuttons[i].y, menubuttonx, menubuttony)) {
                 menustate = menubuttons[i].menustate;
+                shopstate = 0;
               }
             }
+
+            //action buttons, again; i wish the clicking code could be more tied to the button code but whatevsss
+            if(menustate == 1) {
+              for(int i = 3; i < 4; i++) {
+                if(iswithinbutton(x_pos, y_pos, menubuttons[i].x, menubuttons[i].y, menubuttonx, menubuttony)) {
+                  menustate = menubuttons[i].menustate;
+                  shopstate = 0;
+                }
+              }
+
+              if(iswithinbutton(x_pos, y_pos, menubuttons[4].x, menubuttons[4].y, menubuttonx, menubuttony)) {
+                rest();
+              }
+
+            }
+
+            if(menustate == 2 || menustate == 3) {
+              //sliding around the items in the shop menu
+              for(int i = 0; i < 2; i++) {
+                if(iswithinbutton(x_pos, y_pos, shopstateswitcher[i].x, shopstateswitcher[i].y, menubuttonx, menubuttony)) {
+                  //super super sloppy, whatever lol
+                  if(i == 1) {
+                    shopstate = (shopstate + 1) % 10;
+                  } else {
+                    shopstate = (shopstate - 1) % 10;
+                    if(shopstate < 0) {shopstate += 10;}
+                  }
+                }
+              }
+
+              //buying stuff
+              if(menustate == 2) {
+                if(iswithinbutton(x_pos, y_pos, 270, 350, menubuttonx, menubuttony) && players[currentplayer].weaponsowned[shopstate] != 1 && players[currentplayer].gold > armory[shopstate].cost) {
+                  players[currentplayer].gold -= armory[shopstate].cost;
+                  players[currentplayer].weaponsowned[shopstate] = 1;
+                }
+              }
+
+              //i dont love how sloppy this code is and im sure theres some hacky workaround but thatd probably be worse
+              if(menustate == 3) {
+                if(iswithinbutton(x_pos, y_pos, 270, 350, menubuttonx, menubuttony) && players[currentplayer].gold > allarmor[shopstate].cost) {
+                  players[currentplayer].gold -= allarmor[shopstate].cost;
+                  players[currentplayer].armorowned = allarmor[shopstate];
+                }
+              }
+
+            }
           }
+          drawstats(rend);
           break;
       default:
         break;
@@ -250,17 +401,47 @@ int main(int argc, char* argv[]) {
     }
 
     //button drawing corner!!!!!
-    if(menustate == 1) {
+    if(menustate > 0) {
       for(int i = 0; i < 2; i++) {
-        drawmenubutton(rend, menubuttons[i]);
+        drawmenubutton(rend, menubuttons[i], 255, 0, 0);
       }
+
+      //action buttons; probably only want to show them on the first menu
+      if(menustate == 1) {
+        drawmenubutton(rend, menubuttons[3], 0, 0, 255);
+        drawmenubutton(rend, menubuttons[4], 255, 0, 180);
+      }
+
+      //back button and shop switch buttons
+      if(menustate > 1) {
+        drawmenubutton(rend, menubuttons[2], 0, 0, 255);
+        if(menustate == 2 || menustate == 3) {
+          for(int i = 0; i < 2; i++) {
+            drawmenubutton(rend, shopstateswitcher[i], 255, 150, 0);
+          }
+        }
+      }
+
+      //weapons!!!!
+      if(menustate == 2) {
+        drawweapon(rend);
+      }
+
+      if(menustate == 3) {
+        drawarmor(rend);
+      }
+
+    }
+
+    if(menustate == 4) {
+      drawweaponchoices(rend);
     }
 
     if(menustate == 0) {
-      char* selectiontext;
+      char selectiontext[100];
       sprintf(selectiontext, "Player %d, pick your cat friend", currentplayer + 1, 50);
+      //drawtext(rend, selectiontext, 100, 100, 64, 255, 255, 255);
 
-      drawtext(rend, selectiontext, 100, 100, 64, 255, 255, 255);
       drawcatshop(rend);
     }
 
